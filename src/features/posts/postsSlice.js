@@ -1,34 +1,28 @@
-import { createSlice, nanoid } from "@reduxjs/toolkit";
-import { sub } from 'date-fns';
+import { createAsyncThunk, createSlice, nanoid } from "@reduxjs/toolkit";
 
-const initialState = [
-  {
-      id: '1',
-      title: 'Learning Redux Toolkit',
-      content: "I've heard good things.",
-      date: sub(new Date(), { minutes: 10 }).toISOString(), //fecha de ahorita menos 10 min
-      reactions: {
-          thumbsUp: 0,
-          wow: 0,
-          heart: 0,
-          rocket: 0,
-          coffee: 0
-      }
-  },
-  {
-      id: '2',
-      title: 'Slices...',
-      content: "The more I say slice, the more I want pizza.",
-      date: sub(new Date(), { minutes: 5 }).toISOString(),
-      reactions: {
-          thumbsUp: 0,
-          wow: 0,
-          heart: 0,
-          rocket: 0,
-          coffee: 0
-      }
-  }
-]
+import { sub } from 'date-fns';
+import axios from "axios";
+
+const POSTS_URL = 'https://jsonplaceholder.typicode.com/posts';
+
+const initialState = { 
+  //inicia como  array vacio los post, y estado inactivo, no hemos aun iniciado. Ojo que ahora es un object
+    posts: [],
+    status: 'idle', //'idle' | 'loading' | 'succeeded' | 'failed'
+    error: null
+}
+
+//fetch de placeholder para post info
+export const fetchPosts = createAsyncThunk('posts/fetchPosts', async () => {
+    const response = await axios.get(POSTS_URL)
+    return response.data
+})
+
+//vamos a escrbir nuevos posts. LE mando el post data
+export const addNewPost = createAsyncThunk('posts/addNewPost', async (initialPost) => {
+    const response = await axios.post(POSTS_URL, initialPost)
+    return response.data
+})
 
 const postSlice = createSlice({
   name: 'posts',
@@ -36,7 +30,7 @@ const postSlice = createSlice({
   reducers:{
     postAdded:  { // agregar posts
       reducer(state, action) {
-        state.push(action.payload)
+        state.posts.push(action.payload)
       },
       prepare(title, content, userId) {
           return {
@@ -60,7 +54,7 @@ const postSlice = createSlice({
 
     reactionAdded(state, action) {
       const { postId, reaction } = action.payload //saco post ID, y sus reaccion a cambiar
-      const existingPost = state.find(post => post.id === postId) //eneucntro post
+      const existingPost = state.posts.find(post => post.id === postId) //eneucntro post
       if (existingPost) {
           existingPost.reactions[reaction]++ //aumento las reacciones, para esa reaccion recibida
       }
@@ -68,11 +62,76 @@ const postSlice = createSlice({
 
 
 
+  },
+  extraReducers(builder) {
+    builder
+        .addCase(fetchPosts.pending, (state, action) => {
+            state.status = 'loading'
+        })
+        .addCase(fetchPosts.fulfilled, (state, action) => {
+            state.status = 'succeeded'
+            // Adding date and reactions al initial state
+            let min = 1;
+            const loadedPosts = action.payload.map(post => {
+                post.date = sub(new Date(), { minutes: min++ }).toISOString();
+                post.reactions = {
+                    thumbsUp: 0,
+                    wow: 0,
+                    heart: 0,
+                    rocket: 0,
+                    coffee: 0
+                }
+                return post;
+            });
+
+            // Add any fetched posts to the array
+            //agrego al arraY, cada post devuelto
+            state.posts = state.posts.concat(loadedPosts)
+        })
+        .addCase(fetchPosts.rejected, (state, action) => {
+            state.status = 'failed'
+            state.error = action.error.message
+        })
+        .addCase(addNewPost.fulfilled, (state, action) => {
+          //para gregar un nuevo post, primero lo agrega a la BD, luego ya hace algo
+          //ese algo es agregarlo al esto
+        
+          //***** esta un poco ilogico esto, porque ya el action postaddded pierde sentido
+
+
+            // Fix for API post IDs: LOS organizo porque no están ordenadas
+            // Creating sortedPosts & assigning the id 
+            // would be not be needed if the fake API 
+            // returned accurate new post IDs
+            const sortedPosts = state.posts.sort((a, b) => {
+                if (a.id > b.id) return 1
+                if (a.id < b.id) return -1
+                return 0
+            })
+            action.payload.id = sortedPosts[sortedPosts.length - 1].id + 1;
+            // End fix for fake API post IDs 
+
+            //convierto el payload al formato que nesito para agregrlo
+
+            action.payload.userId = Number(action.payload.userId)
+            action.payload.date = new Date().toISOString();
+            action.payload.reactions = {
+              thumbsUp: 0,
+              wow: 0,
+              heart: 0,
+              rocket: 0,
+              coffee: 0
+            }
+            console.log(action.payload)
+            state.posts.push(action.payload)
+        })
   }
 })
 
 //exporto el selector
-export const selectAllPosts = (state) => state.posts
+export const selectAllPosts = (state) => state.posts.posts
+export const getPostsStatus = (state) => state.posts.status;
+export const getPostsError = (state) => state.posts.error;
 
 //exporto acciones
 export const {postAdded, reactionAdded} = postSlice.actions
