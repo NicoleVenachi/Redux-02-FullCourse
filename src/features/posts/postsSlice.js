@@ -24,6 +24,31 @@ export const addNewPost = createAsyncThunk('posts/addNewPost', async (initialPos
     return response.data
 })
 
+//thunk para update, debo pasarle el post a modificar
+export const updatePost = createAsyncThunk('posts/updatePost', async (initialPost) => {
+  const { id } = initialPost;
+  try {
+      const response = await axios.put(`${POSTS_URL}/${id}`, initialPost)
+      return response.data
+  } catch (err) {
+      //return err.message;
+      return initialPost; // only for testing Redux! porque los que no tengan el id en la APi, no podría simular que los edita
+  }
+})
+
+//thunk para eliminar
+export const deletePost = createAsyncThunk('posts/deletePost', async (initialPost) => {
+  const { id } = initialPost;
+  try {
+      const response = await axios.delete(`${POSTS_URL}/${id}`)
+      if (response?.status === 200) return initialPost;
+      // la respuesta no me trae el id, por eso si se elimino bien, devuelvo objeto uqe recib
+      return `${response?.status}: ${response?.statusText}`;
+  } catch (err) {
+      return err.message;
+  }
+})
+
 const postSlice = createSlice({
   name: 'posts',
   initialState,
@@ -92,6 +117,7 @@ const postSlice = createSlice({
             state.status = 'failed'
             state.error = action.error.message
         })
+
         .addCase(addNewPost.fulfilled, (state, action) => {
           //para gregar un nuevo post, primero lo agrega a la BD, luego ya hace algo
           //ese algo es agregarlo al esto
@@ -125,6 +151,39 @@ const postSlice = createSlice({
             console.log(action.payload)
             state.posts.push(action.payload)
         })
+
+        .addCase(updatePost.fulfilled, (state, action) => {
+            if (!action.payload?.id) { 
+                // sino devolvio el post actualizado, se hizo mal
+                console.log('Update could not complete')
+                console.log(action.payload)
+                return;
+            }
+
+            //actualizo los post locales con ese post
+            const { id } = action.payload;
+            action.payload.date = new Date().toISOString(); //cambio la hora
+
+            //saco todo los post ditintos al actualizado
+            const posts = state.posts.filter(post => post.id !== id);
+            
+            //reemplazo los post con los anteriores y le concateno el actualizado
+            state.posts = [...posts, action.payload];
+        })
+
+        .addCase(deletePost.fulfilled, (state, action) => {
+          // despues dell http delte, lo elimino. Verifico si existe
+            if (!action.payload?.id) {
+                console.log('Delete could not complete')
+                console.log(action.payload)
+                return;
+            }
+
+            //filtro todos los que no sea iguala al eliminado y sobreescribto
+            const { id } = action.payload;
+            const posts = state.posts.filter(post => post.id !== id);
+            state.posts = posts;
+        })
   }
 })
 
@@ -132,6 +191,11 @@ const postSlice = createSlice({
 export const selectAllPosts = (state) => state.posts.posts
 export const getPostsStatus = (state) => state.posts.status;
 export const getPostsError = (state) => state.posts.error;
+
+//selector para sacar solo 1 post
+export const selectPostById = (state, postId) =>
+    state.posts.posts.find(post => post.id === postId);
+
 
 //exporto acciones
 export const {postAdded, reactionAdded} = postSlice.actions
