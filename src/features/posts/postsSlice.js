@@ -1,16 +1,27 @@
-import { createAsyncThunk, createSlice, nanoid } from "@reduxjs/toolkit";
+import {
+    createSlice,
+    createAsyncThunk,
+    createSelector,
+    createEntityAdapter
+} from "@reduxjs/toolkit";
 
 import { sub } from 'date-fns';
 import axios from "axios";
 
 const POSTS_URL = 'https://jsonplaceholder.typicode.com/posts';
 
-const initialState = { 
+const postsAdapter = createEntityAdapter({
+    sortComparer: (a, b) => b.date.localeCompare(a.date)
+})
+
+const initialState = postsAdapter.getInitialState({
+
   //inicia como  array vacio los post, y estado inactivo, no hemos aun iniciado. Ojo que ahora es un object
-    posts: [],
+    // posts: [],
     status: 'idle', //'idle' | 'loading' | 'succeeded' | 'failed'
-    error: null
-}
+    error: null,
+    count: 0
+})
 
 //fetch de placeholder para post info
 export const fetchPosts = createAsyncThunk('posts/fetchPosts', async () => {
@@ -53,37 +64,41 @@ const postSlice = createSlice({
   name: 'posts',
   initialState,
   reducers:{
-    postAdded:  { // agregar posts
-      reducer(state, action) {
-        state.posts.push(action.payload)
-      },
-      prepare(title, content, userId) {
-          return {
-              payload: {
-                  id: nanoid(),
-                  title,
-                  content,
-                  date: new Date().toISOString(), //alamaceno date en ISOString, fecha justa de creacion
-                  userId, // agrego el userID
-                  reactions: { //pongo las reacciones en 0.
-                      thumbsUp: 0,
-                      wow: 0,
-                      heart: 0,
-                      rocket: 0,
-                      coffee: 0
-                  }
-              }
-          }
-      }
-    },
+    // postAdded:  { // agregar posts
+    //   reducer(state, action) {
+    //     state.posts.push(action.payload)
+    //   },
+    //   prepare(title, content, userId) {
+    //       return {
+    //           payload: {
+    //               id: nanoid(),
+    //               title,
+    //               content,
+    //               date: new Date().toISOString(), //alamaceno date en ISOString, fecha justa de creacion
+    //               userId, // agrego el userID
+    //               reactions: { //pongo las reacciones en 0.
+    //                   thumbsUp: 0,
+    //                   wow: 0,
+    //                   heart: 0,
+    //                   rocket: 0,
+    //                   coffee: 0
+    //               }
+    //           }
+    //       }
+    //   }
+    // },
 
     reactionAdded(state, action) {
       const { postId, reaction } = action.payload //saco post ID, y sus reaccion a cambiar
-      const existingPost = state.posts.find(post => post.id === postId) //eneucntro post
+      const existingPost = state.entities[postId]
+    //   const existingPost = state.posts.find(post => post.id === postId) //eneucntro post
       if (existingPost) {
           existingPost.reactions[reaction]++ //aumento las reacciones, para esa reaccion recibida
       }
-  }
+    },
+    increaseCount(state, action) {
+        state.count = state.count + 1
+    }
 
 
 
@@ -111,7 +126,9 @@ const postSlice = createSlice({
 
             // Add any fetched posts to the array
             //agrego al arraY, cada post devuelto
-            state.posts = state.posts.concat(loadedPosts)
+            postsAdapter.upsertMany(state, loadedPosts)
+            
+            //state.posts = state.posts.concat(loadedPosts)
         })
         .addCase(fetchPosts.rejected, (state, action) => {
             state.status = 'failed'
@@ -149,7 +166,9 @@ const postSlice = createSlice({
               coffee: 0
             }
             console.log(action.payload)
-            state.posts.push(action.payload)
+
+            postsAdapter.addOne(state, action.payload)
+            // state.posts.push(action.payload)
         })
 
         .addCase(updatePost.fulfilled, (state, action) => {
@@ -168,7 +187,8 @@ const postSlice = createSlice({
             const posts = state.posts.filter(post => post.id !== id);
             
             //reemplazo los post con los anteriores y le concateno el actualizado
-            state.posts = [...posts, action.payload];
+            postsAdapter.upsertOne(state, action.payload)
+            //state.posts = [...posts, action.payload];
         })
 
         .addCase(deletePost.fulfilled, (state, action) => {
@@ -182,22 +202,41 @@ const postSlice = createSlice({
             //filtro todos los que no sea iguala al eliminado y sobreescribto
             const { id } = action.payload;
             const posts = state.posts.filter(post => post.id !== id);
-            state.posts = posts;
+            
+            postsAdapter.removeOne(state, id)
+            //state.posts = posts;
         })
   }
 })
 
 //exporto el selector
-export const selectAllPosts = (state) => state.posts.posts
+
+//getSelectors creates these selectors and we rename them with aliases using destructuring
+export const {
+    selectAll: selectAllPosts,
+    selectById: selectPostById,
+    selectIds: selectPostIds
+    // Pass in a selector that returns the posts slice of state
+} = postsAdapter.getSelectors(state => state.posts)
+
+
+// export const selectAllPosts = (state) => state.posts.posts
 export const getPostsStatus = (state) => state.posts.status;
 export const getPostsError = (state) => state.posts.error;
+export const getCount = (state) => state.posts.count;
 
 //selector para sacar solo 1 post
-export const selectPostById = (state, postId) =>
-    state.posts.posts.find(post => post.id === postId);
+// export const selectPostById = (state, postId) => state.posts.posts.find(post => post.id === postId);
+
+//selector para potimizar
+export const selectPostsByUser = createSelector(
+    //le pasao posts y una anonymous functiosn que devuelve el id
+    [selectAllPosts, (state, userId) => userId],
+    (posts, userId) => posts.filter(post => post.userId === userId)
+)
 
 
 //exporto acciones
-export const {postAdded, reactionAdded} = postSlice.actions
+export const {postAdded, increaseCount, reactionAdded} = postSlice.actions
 
 export default postSlice

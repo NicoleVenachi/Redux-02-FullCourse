@@ -28,4 +28,9 @@ const usersSlice = createSlice({
 
 export const selectAllUsers = (state) => state.users;
 
+//seleccionar user por id, saco del estado y filtro
+export const selectUserById = (state, userId) =>
+    state.users.find(user => user.id === userId)
+
+
 export default usersSlice
