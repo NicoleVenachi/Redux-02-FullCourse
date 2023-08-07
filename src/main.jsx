@@ -8,6 +8,10 @@ import { fetchUsers } from './features/users/usersSlice';
 import { fetchPosts } from './features/posts/postsSlice';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 
+//para el todolist
+import { ApiProvider } from "@reduxjs/toolkit/query/react";
+import { apiSlice } from "./features/api/apiSlice";
+
 store.dispatch(fetchUsers());
 store.dispatch(fetchPosts()); //desde el principio traigo los posts
 
@@ -19,5 +23,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       </Routes>
     </Router>
   </Provider>
+
+
+  //para el todolist
+  // <React.StrictMode>
+  // <ApiProvider api={apiSlice}>
+  //   <App />
+  // </ApiProvider>
+  // </React.StrictMode>
 
 )
