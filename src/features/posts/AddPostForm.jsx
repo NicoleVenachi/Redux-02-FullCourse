@@ -1,15 +1,14 @@
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 
-import { addNewPost } from "./postsSlice";
 import { selectAllUsers } from "../users/usersSlice";
 import { useNavigate } from "react-router-dom";
-
+import { useAddNewPostMutation } from "./postsSlice";
 
 const AddPostForm = () => {
-  //redux and global state2
-  const dispatch = useDispatch()
-  const users = useSelector(selectAllUsers)
+  //puedo sacar tambien ele stado
+  const [addNewPost, { isLoading }] = useAddNewPostMutation()
+
 
   //
   const navigate = useNavigate()
@@ -18,8 +17,9 @@ const AddPostForm = () => {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [userId, setUserId] = useState('')
-  const [addRequestStatus, setAddRequestStatus] = useState('idle')
 
+  //
+  const users = useSelector(selectAllUsers)
 
   //handle events
   const onTitleChanged = e => setTitle(e.target.value)
@@ -27,14 +27,13 @@ const AddPostForm = () => {
   const onAuthorChanged = e => setUserId(e.target.value)
 
   //verifico si puedo o no guarar post, sino puedo, deshabilito boton
-  const canSave = [title, content, userId].every(Boolean) && addRequestStatus === 'idle';
+  const canSave = [title, content, userId].every(Boolean) && !isLoading;
 
   //si tengo info, mando a crear post en estado globar, y reiinicio UI
-  const onSavePostClicked = () => {
+  const onSavePostClicked = async () => {
     if (canSave) {
       try {
-        setAddRequestStatus('pending')
-        dispatch(addNewPost({ title, body: content, userId })).unwrap()
+        await addNewPost({ title, body: content, userId }).unwrap()
 
         setTitle('')
         setContent('')
@@ -42,8 +41,6 @@ const AddPostForm = () => {
         navigate('/')
       } catch (err) {
         console.error('Failed to save the post', err)
-      } finally {
-        setAddRequestStatus('idle')
       }
     }
   }

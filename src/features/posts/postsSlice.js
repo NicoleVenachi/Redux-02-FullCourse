@@ -1,242 +1,170 @@
 import {
-    createSlice,
-    createAsyncThunk,
     createSelector,
     createEntityAdapter
 } from "@reduxjs/toolkit";
-
 import { sub } from 'date-fns';
-import axios from "axios";
 
-const POSTS_URL = 'https://jsonplaceholder.typicode.com/posts';
+import { apiSlice } from "../api/apiSlice";
 
+//vamos a seguir usando el normalized state
 const postsAdapter = createEntityAdapter({
     sortComparer: (a, b) => b.date.localeCompare(a.date)
 })
 
-const initialState = postsAdapter.getInitialState({
+//initial state lo puedo crer vvacio
+const initialState = postsAdapter.getInitialState()
 
-  //inicia como  array vacio los post, y estado inactivo, no hemos aun iniciado. Ojo que ahora es un object
-    // posts: [],
-    status: 'idle', //'idle' | 'loading' | 'succeeded' | 'failed'
-    error: null,
-    count: 0
-})
+export const extendedApiSlice = apiSlice.injectEndpoints({
+    endpoints: builder => ({
+        getPosts: builder.query({
+            query: () => '/posts',
+            transformResponse: responseData => {
+                let min = 1;
 
-//fetch de placeholder para post info
-export const fetchPosts = createAsyncThunk('posts/fetchPosts', async () => {
-    const response = await axios.get(POSTS_URL)
-    return response.data
-})
-
-//vamos a escrbir nuevos posts. LE mando el post data
-export const addNewPost = createAsyncThunk('posts/addNewPost', async (initialPost) => {
-    const response = await axios.post(POSTS_URL, initialPost)
-    return response.data
-})
-
-//thunk para update, debo pasarle el post a modificar
-export const updatePost = createAsyncThunk('posts/updatePost', async (initialPost) => {
-  const { id } = initialPost;
-  try {
-      const response = await axios.put(`${POSTS_URL}/${id}`, initialPost)
-      return response.data
-  } catch (err) {
-      //return err.message;
-      return initialPost; // only for testing Redux! porque los que no tengan el id en la APi, no podría simular que los edita
-  }
-})
-
-//thunk para eliminar
-export const deletePost = createAsyncThunk('posts/deletePost', async (initialPost) => {
-  const { id } = initialPost;
-  try {
-      const response = await axios.delete(`${POSTS_URL}/${id}`)
-      if (response?.status === 200) return initialPost;
-      // la respuesta no me trae el id, por eso si se elimino bien, devuelvo objeto uqe recib
-      return `${response?.status}: ${response?.statusText}`;
-  } catch (err) {
-      return err.message;
-  }
-})
-
-const postSlice = createSlice({
-  name: 'posts',
-  initialState,
-  reducers:{
-    // postAdded:  { // agregar posts
-    //   reducer(state, action) {
-    //     state.posts.push(action.payload)
-    //   },
-    //   prepare(title, content, userId) {
-    //       return {
-    //           payload: {
-    //               id: nanoid(),
-    //               title,
-    //               content,
-    //               date: new Date().toISOString(), //alamaceno date en ISOString, fecha justa de creacion
-    //               userId, // agrego el userID
-    //               reactions: { //pongo las reacciones en 0.
-    //                   thumbsUp: 0,
-    //                   wow: 0,
-    //                   heart: 0,
-    //                   rocket: 0,
-    //                   coffee: 0
-    //               }
-    //           }
-    //       }
-    //   }
-    // },
-
-    reactionAdded(state, action) {
-      const { postId, reaction } = action.payload //saco post ID, y sus reaccion a cambiar
-      const existingPost = state.entities[postId]
-    //   const existingPost = state.posts.find(post => post.id === postId) //eneucntro post
-      if (existingPost) {
-          existingPost.reactions[reaction]++ //aumento las reacciones, para esa reaccion recibida
-      }
-    },
-    increaseCount(state, action) {
-        state.count = state.count + 1
-    }
-
-
-
-  },
-  extraReducers(builder) {
-    builder
-        .addCase(fetchPosts.pending, (state, action) => {
-            state.status = 'loading'
-        })
-        .addCase(fetchPosts.fulfilled, (state, action) => {
-            state.status = 'succeeded'
-            // Adding date and reactions al initial state
-            let min = 1;
-            const loadedPosts = action.payload.map(post => {
-                post.date = sub(new Date(), { minutes: min++ }).toISOString();
-                post.reactions = {
-                    thumbsUp: 0,
-                    wow: 0,
-                    heart: 0,
-                    rocket: 0,
-                    coffee: 0
+                //si no tienen las relacciones, se las agrego
+                const loadedPosts = responseData.map(post => {
+                    if (!post?.date) post.date = sub(new Date(), { minutes: min++ }).toISOString();
+                    if (!post?.reactions) post.reactions = {
+                        thumbsUp: 0,
+                        wow: 0,
+                        heart: 0,
+                        rocket: 0,
+                        coffee: 0
+                    }
+                    return post;
+                });
+                //mando el nuevo estado al adapter, para normalizar la data
+                return postsAdapter.setAll(initialState, loadedPosts)
+            },
+            providesTags: (result, error, arg) => [
+                { type: 'Post', id: "LIST" },
+                ...result.ids.map(id => ({ type: 'Post', id }))
+            ]
+        }),
+        getPostsByUserId: builder.query({
+            query: id => `/posts/?userId=${id}`,
+            transformResponse: responseData => {
+                let min = 1;
+                const loadedPosts = responseData.map(post => {
+                    if (!post?.date) post.date = sub(new Date(), { minutes: min++ }).toISOString();
+                    if (!post?.reactions) post.reactions = {
+                        thumbsUp: 0,
+                        wow: 0,
+                        heart: 0,
+                        rocket: 0,
+                        coffee: 0
+                    }
+                    return post;
+                });
+                return postsAdapter.setAll(initialState, loadedPosts)
+            },
+            providesTags: (result, error, arg) => [
+                ...result.ids.map(id => ({ type: 'Post', id }))
+            ]
+        }),
+        addNewPost: builder.mutation({
+            query: initialPost => ({
+                url: '/posts',
+                method: 'POST',
+                body: {
+                    ...initialPost,
+                    userId: Number(initialPost.userId),
+                    date: new Date().toISOString(),
+                    reactions: {
+                        thumbsUp: 0,
+                        wow: 0,
+                        heart: 0,
+                        rocket: 0,
+                        coffee: 0
+                    }
                 }
-                return post;
-            });
-
-            // Add any fetched posts to the array
-            //agrego al arraY, cada post devuelto
-            postsAdapter.upsertMany(state, loadedPosts)
-            
-            //state.posts = state.posts.concat(loadedPosts)
-        })
-        .addCase(fetchPosts.rejected, (state, action) => {
-            state.status = 'failed'
-            state.error = action.error.message
-        })
-
-        .addCase(addNewPost.fulfilled, (state, action) => {
-          //para gregar un nuevo post, primero lo agrega a la BD, luego ya hace algo
-          //ese algo es agregarlo al esto
-        
-          //***** esta un poco ilogico esto, porque ya el action postaddded pierde sentido
-
-
-            // Fix for API post IDs: LOS organizo porque no están ordenadas
-            // Creating sortedPosts & assigning the id 
-            // would be not be needed if the fake API 
-            // returned accurate new post IDs
-            const sortedPosts = state.posts.sort((a, b) => {
-                if (a.id > b.id) return 1
-                if (a.id < b.id) return -1
-                return 0
-            })
-            action.payload.id = sortedPosts[sortedPosts.length - 1].id + 1;
-            // End fix for fake API post IDs 
-
-            //convierto el payload al formato que nesito para agregrlo
-
-            action.payload.userId = Number(action.payload.userId)
-            action.payload.date = new Date().toISOString();
-            action.payload.reactions = {
-              thumbsUp: 0,
-              wow: 0,
-              heart: 0,
-              rocket: 0,
-              coffee: 0
+            }),
+            invalidatesTags: [
+                { type: 'Post', id: "LIST" }
+            ]
+        }),
+        updatePost: builder.mutation({
+            query: initialPost => ({
+                url: `/posts/${initialPost.id}`,
+                method: 'PUT',
+                body: {
+                    ...initialPost,
+                    date: new Date().toISOString()
+                }
+            }),
+            invalidatesTags: (result, error, arg) => [
+                { type: 'Post', id: arg.id }
+            ] //aqui, sacamos el id del arg
+        }),
+        deletePost: builder.mutation({
+            query: ({ id }) => ({
+                url: `/posts/${id}`,
+                method: 'DELETE',
+                body: { id }
+            }),
+            invalidatesTags: (result, error, arg) => [
+                { type: 'Post', id: arg.id }
+            ]
+        }),
+        addReaction: builder.mutation({
+            query: ({ postId, reactions }) => ({
+                url: `posts/${postId}`,
+                method: 'PATCH',
+                // In a real app, we'd probably need to base this on user ID somehow
+                // so that a user can't do the same reaction more than once
+                body: { reactions }
+            }),
+            async onQueryStarted({ postId, reactions }, { dispatch, queryFulfilled }) {
+                // `updateQueryData` requires the endpoint name and cache key arguments,
+                // so it knows which piece of cache state to update
+                const patchResult = dispatch(
+                    extendedApiSlice.util.updateQueryData('getPosts', undefined, draft => {
+                        // The `draft` is Immer-wrapped and can be "mutated" like in createSlice
+                        const post = draft.entities[postId]
+                        if (post) post.reactions = reactions
+                    })
+                )
+                try {
+                    await queryFulfilled
+                } catch {
+                    patchResult.undo()
+                }
             }
-            console.log(action.payload)
-
-            postsAdapter.addOne(state, action.payload)
-            // state.posts.push(action.payload)
         })
-
-        .addCase(updatePost.fulfilled, (state, action) => {
-            if (!action.payload?.id) { 
-                // sino devolvio el post actualizado, se hizo mal
-                console.log('Update could not complete')
-                console.log(action.payload)
-                return;
-            }
-
-            //actualizo los post locales con ese post
-            const { id } = action.payload;
-            action.payload.date = new Date().toISOString(); //cambio la hora
-
-            //saco todo los post ditintos al actualizado
-            const posts = state.posts.filter(post => post.id !== id);
-            
-            //reemplazo los post con los anteriores y le concateno el actualizado
-            postsAdapter.upsertOne(state, action.payload)
-            //state.posts = [...posts, action.payload];
-        })
-
-        .addCase(deletePost.fulfilled, (state, action) => {
-          // despues dell http delte, lo elimino. Verifico si existe
-            if (!action.payload?.id) {
-                console.log('Delete could not complete')
-                console.log(action.payload)
-                return;
-            }
-
-            //filtro todos los que no sea iguala al eliminado y sobreescribto
-            const { id } = action.payload;
-            const posts = state.posts.filter(post => post.id !== id);
-            
-            postsAdapter.removeOne(state, id)
-            //state.posts = posts;
-        })
-  }
+    })
 })
 
-//exporto el selector
+
+// exporto los hooks
+export const {
+    useGetPostsQuery,
+    useGetPostsByUserIdQuery,
+    useAddNewPostMutation,
+    useUpdatePostMutation,
+    useDeletePostMutation,
+    useAddReactionMutation
+} = extendedApiSlice
+
+//exporto los selectores para traer el estado
+// en los dos primeros, saco la respuesta general, y tomo la data, normalizada
+
+
+// returns the query result object. EL resultado total del query
+export const selectPostsResult = extendedApiSlice.endpoints.getPosts.select()
+
+// Creates memoized selector. Recibe input funciont, y devuelve data
+//recibe el resultado de la query, y devuelve la data de la rta, normalizada
+const selectPostsData = createSelector(
+    selectPostsResult,
+    postsResult => postsResult.data // normalized state object with ids & entities
+)
 
 //getSelectors creates these selectors and we rename them with aliases using destructuring
 export const {
     selectAll: selectAllPosts,
     selectById: selectPostById,
     selectIds: selectPostIds
-    // Pass in a selector that returns the posts slice of state
-} = postsAdapter.getSelectors(state => state.posts)
+    // Pass in a selector that returns the posts slice of state.
+    //con selectPostData, devuelvo es un estado normalizado. En la primera vez que carga seria nulo, porque daria el initial state
+} = postsAdapter.getSelectors(state => selectPostsData(state) ?? initialState)
 
-
-// export const selectAllPosts = (state) => state.posts.posts
-export const getPostsStatus = (state) => state.posts.status;
-export const getPostsError = (state) => state.posts.error;
-export const getCount = (state) => state.posts.count;
-
-//selector para sacar solo 1 post
-// export const selectPostById = (state, postId) => state.posts.posts.find(post => post.id === postId);
-
-//selector para potimizar
-export const selectPostsByUser = createSelector(
-    //le pasao posts y una anonymous functiosn que devuelve el id
-    [selectAllPosts, (state, userId) => userId],
-    (posts, userId) => posts.filter(post => post.userId === userId)
-)
-
-
-//exporto acciones
-export const {postAdded, increaseCount, reactionAdded} = postSlice.actions
-
-export default postSlice
